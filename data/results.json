@@ -1,0 +1,4 @@
+{
+  "note": "Seed real-world results here as { \"matchId\": { \"home\": <goals>, \"away\": <goals> } }. Group matches use IDs like \"A1\"..\"A6\" (see fixtures generation order in sim.js). Knockout matches use their numeric ID (73..104). Empty by default so the app opens with pure pre-tournament predictions; the user enters results in the UI and they persist to localStorage, overriding this file.",
+  "results": {}
+}
