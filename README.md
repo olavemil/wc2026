@@ -15,6 +15,21 @@ python3 -m http.server 8765
 # then open http://localhost:8765
 ```
 
+## GitHub Pages Deployment
+
+This project is configured for automatic deployment to GitHub Pages via GitHub Actions. Push to `main` to deploy automatically.
+
+To enable GitHub Pages on your repository:
+
+1. Go to your repository settings → **Pages** (in the left sidebar under "Code and automation")
+2. Under "Build and deployment" → "Source", select **Deploy from a branch**
+3. Choose `main` as the branch and `/root` as the folder
+4. Click **Save**
+
+The GitHub Actions workflow (`.github/workflows/pages.yml`) will automatically deploy on every push to `main`. Your site will be available at `https://<username>.github.io/<repo-name>/`
+
+For more details, see [GitHub Pages documentation](https://docs.github.com/en/pages).
+
 ## How the model works
 
 **Per match.** The FIFA rating difference `d` gives a win-expectancy on the
