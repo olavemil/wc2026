@@ -420,8 +420,13 @@ function runMonteCarlo(data, iterations, fixedResults, seed) {
   for (const c of codes) {
     const s = statSums[c];
     out[c] = {
-      R32: reachedCount[c][0] / iterations,
-      R16: reachedCount[c][1] / iterations,
+      // reachedCount[c][k] = times the team reached >= round-index k, where
+      // index 0 = qualified from the group (Round of 32), 1 = Round of 16, etc.
+      // So `advance` (qualified from group) is index 0; reaching the *next* round
+      // (winning the R32 match) is index 1, and so on.
+      advance: reachedCount[c][0] / iterations, // qualified from group stage
+      R32: reachedCount[c][0] / iterations,     // = advance (reached the R32)
+      R16: reachedCount[c][1] / iterations,     // reached the Round of 16
       QF:  reachedCount[c][2] / iterations,
       SF:  reachedCount[c][3] / iterations,
       F:   reachedCount[c][4] / iterations,

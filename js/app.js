@@ -187,7 +187,7 @@ function renderGroups(probs) {
         `<td class="team"><span class="flag">${t.flag}</span>${t.name}</td>` +
         `<td>${(p.xPts || 0).toFixed(1)}</td>` +
         `<td class="${gd >= 0 ? "pos" : "neg"}">${gd >= 0 ? "+" : ""}${gd.toFixed(1)}</td>` +
-        `<td>${fmtPct(p.R16 || 0)}</td>`;
+        `<td>${fmtPct(p.advance || 0)}</td>`;
       tb.appendChild(tr);
     });
     table.appendChild(tb);
