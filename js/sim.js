@@ -133,7 +133,13 @@ function simMatch(teamH, teamA, rng, fixed) {
 function simKnockout(teamH, teamA, rng, fixed) {
   const r = simMatch(teamH, teamA, rng, fixed);
   if (r.home !== r.away) return r;
-  if (r.real && r.shootoutWinner) return r; // user may store an explicit winner
+  // A draw in regulation must be settled on penalties. If the user entered a
+  // level result they must also pick the shootout winner (simMatch doesn't copy
+  // it, so read it off the fixed result here); otherwise simulate the shootout.
+  if (r.real && fixed && (fixed.shootoutWinner === "home" || fixed.shootoutWinner === "away")) {
+    r.shootoutWinner = fixed.shootoutWinner;
+    return r;
+  }
   const W = winExpectancy(teamH.rating, teamA.rating);
   // pull toward 50/50 for penalties
   const pHome = 0.5 + (W - 0.5) * 0.5;

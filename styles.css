@@ -138,8 +138,9 @@ main {
 .bracket-toggle button.on { background: var(--accent); color: #06121b; font-weight: 600; }
 
 .bracket-grid {
+  position: relative;
   display: flex;
-  gap: 20px;
+  gap: 40px;
   overflow-x: auto;
   padding-bottom: 8px;
   align-items: stretch;
@@ -148,20 +149,42 @@ main {
 .bcol {
   display: flex;
   flex-direction: column;
+  min-width: 170px;
+}
+/* The body holds only the match boxes and absorbs the column's full height, so
+   space-around distributes them evenly — and because every column's body is the
+   same height (align-items: stretch), each match lines up vertically with the
+   midpoint of the two matches that feed it. The head sits outside this. */
+.bcol-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   justify-content: space-around;
   gap: 8px;
-  min-width: 170px;
 }
 .bcol-head {
   color: var(--accent);
   font-size: 12px;
   font-weight: 600;
   text-align: center;
-  margin-bottom: 4px;
-  position: sticky;
+  margin-bottom: 8px;
+}
+/* Feeder connector overlay: drawn beneath the match boxes. */
+.bracket-links {
+  position: absolute;
   top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+.bracket-link {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1.5;
 }
 .bmatch {
+  position: relative;
+  z-index: 1;
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -192,6 +215,24 @@ main {
 .bcand:first-child .bcand-name { font-weight: 600; }
 .bcand-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bmatch-super .bslot-super:first-child .bcand:first-child .bcand-name { color: var(--good); }
+
+/* knockout score entry (shown inside a locked match box) */
+.ko-entry-wrap { border-top: 1px solid var(--line); background: var(--panel); padding: 5px 8px; cursor: default; }
+.ko-entry { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.ko-score {
+  width: 38px; text-align: center; background: var(--bg);
+  border: 1px solid var(--line); color: var(--ink); border-radius: 5px; padding: 3px;
+  font-size: 12px;
+}
+.ko-score:focus { outline: none; border-color: var(--accent); }
+.ko-pens { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 5px; }
+.ko-pens-label { color: var(--muted); font-size: 11px; }
+.ko-pen {
+  padding: 2px 7px; font-size: 13px; line-height: 1.2; border-radius: 5px;
+  background: var(--panel-2); border: 1px solid var(--line); cursor: pointer;
+}
+.ko-pen:hover { border-color: var(--accent); }
+.ko-pen.on { background: var(--good); border-color: var(--good); }
 
 .bmatch { cursor: pointer; }
 .bmatch:hover { border-color: var(--accent); }

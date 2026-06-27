@@ -218,6 +218,22 @@ function renderOdds(probs) {
 
 /* Group fixtures, for result entry. Mirrors RR_PAIRS order in sim.js. */
 const RR_PAIRS = [[0, 1], [2, 3], [0, 2], [1, 3], [0, 3], [1, 2]];
+
+/* True when a *complete* real result reverses the model's prediction (the
+ * predicted winner lost) or holds a heavy favorite to a draw. Shared by the
+ * initial render and the in-place per-row update. */
+function isUpset(teamH, teamA, r) {
+  if (!(r && Number.isFinite(r.home) && Number.isFinite(r.away))) return false;
+  const p = wdl(teamH.rating, teamA.rating);
+  const pred = p.home >= p.draw && p.home >= p.away ? "home"
+             : p.away >= p.draw && p.away >= p.home ? "away" : "draw";
+  const actual = r.home > r.away ? "home" : r.home < r.away ? "away" : "draw";
+  const reversal = (pred === "home" && actual === "away") ||
+                   (pred === "away" && actual === "home");
+  const heldFavorite = actual === "draw" && (p.home > 0.5 || p.away > 0.5);
+  return reversal || heldFavorite;
+}
+
 function renderFixtures() {
   const host = document.getElementById("fixtures");
   host.innerHTML = "<h3>Group results — set real scores</h3>";
@@ -230,20 +246,7 @@ function renderFixtures() {
       const id = letter + (m + 1);
       const h = teams[hi], a = teams[ai];
       const r = RESULTS[id] || {};
-      const p = wdl(h.rating, a.rating);
-      const pred = p.home >= p.draw && p.home >= p.away ? "home"
-                 : p.away >= p.draw && p.away >= p.home ? "away" : "draw";
-      const isReal = Number.isFinite(r.home) && Number.isFinite(r.away);
-      let upset = false;
-      if (isReal) {
-        const actual = r.home > r.away ? "home" : r.home < r.away ? "away" : "draw";
-        // A true reversal: the predicted winner lost outright.
-        const reversal = (pred === "home" && actual === "away") ||
-                         (pred === "away" && actual === "home");
-        // A draw against a heavy (>50%) favorite: the underdog beat the odds.
-        const heldFavorite = actual === "draw" && (p.home > 0.5 || p.away > 0.5);
-        upset = reversal || heldFavorite;
-      }
+      const upset = isUpset(h, a, r);
       const row = document.createElement("div");
       row.className = "fixture" + (upset ? " upset" : "");
       // The 5 aligned columns live in an inner grid; the upset badge is a sibling
@@ -251,9 +254,9 @@ function renderFixtures() {
       row.innerHTML =
         `<div class="fixture-grid">` +
           `<span class="fteam home clickable" data-detail="${id}" title="Match detail">${h.flag} ${h.name}</span>` +
-          `<input type="number" min="0" class="score" data-id="${id}" data-side="home" value="${isReal ? r.home : ""}">` +
+          `<input type="number" min="0" class="score" data-id="${id}" data-side="home" value="${Number.isFinite(r.home) ? r.home : ""}">` +
           `<span class="dash">–</span>` +
-          `<input type="number" min="0" class="score" data-id="${id}" data-side="away" value="${isReal ? r.away : ""}">` +
+          `<input type="number" min="0" class="score" data-id="${id}" data-side="away" value="${Number.isFinite(r.away) ? r.away : ""}">` +
           `<span class="fteam away clickable" data-detail="${id}" title="Match detail">${a.name} ${a.flag}</span>` +
         `</div>` +
         (upset ? `<span class="upset-tag" title="Result beats the model's prediction">⚡ upset</span>` : "");
@@ -274,10 +277,14 @@ function renderFixtures() {
   });
 }
 
-function onScoreChange(e) {
-  const id = e.target.dataset.id;
-  const side = e.target.dataset.side;
-  const val = e.target.value === "" ? null : parseInt(e.target.value, 10);
+/* Update one side of a stored result from an <input>. Returns the match's
+ * completeness before/after so callers can decide whether a re-sim is warranted.
+ * Crucially this does NOT touch the other side, so a half-entered scoreline
+ * survives untouched in storage (and in the DOM, since we don't re-render). */
+function setResultSide(id, side, rawValue) {
+  const prev = RESULTS[id] || {};
+  const wasComplete = Number.isFinite(prev.home) && Number.isFinite(prev.away);
+  const val = rawValue === "" ? null : parseInt(rawValue, 10);
   RESULTS[id] = RESULTS[id] || {};
   if (val === null || Number.isNaN(val)) {
     delete RESULTS[id][side];
@@ -285,8 +292,45 @@ function onScoreChange(e) {
   } else {
     RESULTS[id][side] = val;
   }
+  const cur = RESULTS[id] || {};
+  const nowComplete = Number.isFinite(cur.home) && Number.isFinite(cur.away);
   saveResults();
-  refresh();
+  return { wasComplete, nowComplete };
+}
+
+function onScoreChange(e) {
+  const id = e.target.dataset.id;
+  const { wasComplete, nowComplete } = setResultSide(id, e.target.dataset.side, e.target.value);
+  // Only re-simulate when a *complete* result changed — i.e. the match just
+  // became complete, or a previously complete result was edited/cleared. Typing
+  // the first of two scores leaves the match incomplete: the sim treats it as
+  // unplayed and the input must not be wiped, so we do nothing here. (Fixtures
+  // are never re-rendered by refresh(), so partial inputs always survive.)
+  if (nowComplete || wasComplete) {
+    updateRowState(id);
+    refresh();
+  }
+}
+
+/* Re-evaluate the upset badge for a single fixture row in place (no rebuild). */
+function updateRowState(id) {
+  const inp = document.querySelector(`input.score[data-id="${id}"]`);
+  if (!inp) return;
+  const row = inp.closest(".fixture");
+  if (!row || !row._teams) return;
+  const [h, a] = row._teams;
+  const upset = isUpset(h, a, RESULTS[id] || {});
+  row.classList.toggle("upset", upset);
+  let tag = row.querySelector(".upset-tag");
+  if (upset && !tag) {
+    tag = document.createElement("span");
+    tag.className = "upset-tag";
+    tag.title = "Result beats the model's prediction";
+    tag.textContent = "⚡ upset";
+    row.appendChild(tag);
+  } else if (!upset && tag) {
+    tag.remove();
+  }
 }
 
 /* ---- knockout bracket ---- */
@@ -358,10 +402,77 @@ function matchBox(m, slots, roundKey) {
     const winnerCode = s.winner ? s.winner.code : null;
     box.appendChild(slotLine(s.home, m.home, winnerCode));
     box.appendChild(slotLine(s.away, m.away, winnerCode));
+    // Once both slots are locked (a single team fills each across every sim),
+    // the matchup is fixed and a real score can be entered. Knockout results are
+    // keyed by the numeric match id, applied to whoever fills the slot — which is
+    // exactly these two teams while locked.
+    const lockedHome = s.home && s.home.code && s.home.p >= 0.999;
+    const lockedAway = s.away && s.away.code && s.away.p >= 0.999;
+    if (lockedHome && lockedAway) {
+      box.appendChild(buildKnockoutEntry(
+        m.match, DATA.teamsByCode[s.home.code], DATA.teamsByCode[s.away.code]));
+    }
   }
   box.title = "Click for match detail";
   box.addEventListener("click", () => openKnockoutModal(m));
   return box;
+}
+
+/* Score-entry controls for a locked knockout match. Knockouts can't end level,
+ * so when the entered score is a draw we require a penalty-shootout winner. */
+function buildKnockoutEntry(matchNo, home, away) {
+  const id = String(matchNo);
+  const r = RESULTS[id] || {};
+  const wrap = document.createElement("div");
+  wrap.className = "ko-entry-wrap";
+  wrap.addEventListener("click", (e) => e.stopPropagation()); // keep modal closed
+  const row = document.createElement("div");
+  row.className = "ko-entry";
+  row.innerHTML =
+    `<input type="number" min="0" class="ko-score" data-id="${id}" data-side="home" value="${Number.isFinite(r.home) ? r.home : ""}">` +
+    `<span class="dash">–</span>` +
+    `<input type="number" min="0" class="ko-score" data-id="${id}" data-side="away" value="${Number.isFinite(r.away) ? r.away : ""}">`;
+  wrap.appendChild(row);
+  const level = Number.isFinite(r.home) && Number.isFinite(r.away) && r.home === r.away;
+  if (level) {
+    const pens = document.createElement("div");
+    pens.className = "ko-pens";
+    pens.innerHTML =
+      `<span class="ko-pens-label">Pens:</span>` +
+      `<button class="ko-pen ${r.shootoutWinner === "home" ? "on" : ""}" data-id="${id}" data-side="home">${home.flag}</button>` +
+      `<button class="ko-pen ${r.shootoutWinner === "away" ? "on" : ""}" data-id="${id}" data-side="away">${away.flag}</button>`;
+    wrap.appendChild(pens);
+  }
+  row.querySelectorAll(".ko-score").forEach((inp) =>
+    inp.addEventListener("change", onKnockoutScoreChange));
+  wrap.querySelectorAll(".ko-pen").forEach((b) =>
+    b.addEventListener("click", onPenWinnerPick));
+  return wrap;
+}
+
+function onKnockoutScoreChange(e) {
+  const id = e.target.dataset.id;
+  const { nowComplete } = setResultSide(id, e.target.dataset.side, e.target.value);
+  const r = RESULTS[id] || {};
+  if (!nowComplete) return; // half-entered: leave the input alone, don't re-sim
+  if (r.home === r.away) {
+    // A draw needs a shootout winner to mean anything. If one is already chosen,
+    // re-sim; otherwise just re-render the bracket to surface the pens picker
+    // (no re-sim yet — the result is incomplete as a knockout outcome).
+    if (r.shootoutWinner === "home" || r.shootoutWinner === "away") refresh();
+    else renderBracket(SLOTS);
+  } else {
+    if (r.shootoutWinner) { delete r.shootoutWinner; saveResults(); }
+    refresh();
+  }
+}
+
+function onPenWinnerPick(e) {
+  const id = e.currentTarget.dataset.id;
+  RESULTS[id] = RESULTS[id] || {};
+  RESULTS[id].shootoutWinner = e.currentTarget.dataset.side;
+  saveResults();
+  refresh();
 }
 
 /* ---- match detail modal ---- */
@@ -390,6 +501,17 @@ function closeModal() {
   if (ex) ex.remove();
 }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+
+/* Bracket connectors are measured from the DOM, so re-draw them after a resize
+ * (column widths and match-box heights change with the viewport). */
+let _resizeT = null;
+window.addEventListener("resize", () => {
+  clearTimeout(_resizeT);
+  _resizeT = setTimeout(() => {
+    const grid = document.querySelector(".bracket-grid");
+    if (grid) drawBracketConnectors(grid);
+  }, 150);
+});
 
 /* W/D/L bar for a fixed pairing. */
 function wdlBar(teamH, teamA) {
@@ -486,6 +608,44 @@ const ROUND_COLUMNS = [
   { key: "final", label: "Final" },
 ];
 
+/* The bracket JSON lists each round in match-number order, but the feeder links
+ * (e.g. R16 #89 = W74 vs W77) are NOT adjacent pairs, so rendering in JSON order
+ * leaves later rounds visually unaligned with the matches that feed them. We
+ * derive a tree order instead: a post-order walk from the final pushes each
+ * match into its round only after both feeder subtrees, which lays every round
+ * out top-to-bottom so a match sits between its two feeders. Cached after first
+ * build (the bracket shape is static). Also returns `feeders`: match -> the
+ * source match numbers for its home/away slots (null when fed from the group
+ * stage), used to draw the connector lines. */
+let BRACKET_ORDER = null;
+function bracketOrder() {
+  if (BRACKET_ORDER) return BRACKET_ORDER;
+  const b = DATA.bracket;
+  const byNum = {}, roundOf = {};
+  const register = (m, key) => { byNum[m.match] = m; roundOf[m.match] = key; };
+  b.round32.forEach((m) => register(m, "round32"));
+  b.round16.forEach((m) => register(m, "round16"));
+  b.quarterfinals.forEach((m) => register(m, "quarterfinals"));
+  b.semifinals.forEach((m) => register(m, "semifinals"));
+  register(b.final, "final");
+
+  const feederOf = (ref) =>
+    typeof ref === "string" && ref[0] === "W" ? parseInt(ref.slice(1), 10) : null;
+  const feeders = {};
+  const order = { round32: [], round16: [], quarterfinals: [], semifinals: [], final: [] };
+  const dfs = (num) => {
+    const m = byNum[num];
+    const fh = feederOf(m.home), fa = feederOf(m.away);
+    feeders[num] = { home: fh, away: fa };
+    if (fh != null) dfs(fh);
+    if (fa != null) dfs(fa);
+    order[roundOf[num]].push(m); // push after both subtrees => top-to-bottom
+  };
+  dfs(b.final.match);
+  BRACKET_ORDER = { order, feeders };
+  return BRACKET_ORDER;
+}
+
 function renderBracket(slots) {
   const host = document.getElementById("bracket");
   host.innerHTML = "";
@@ -510,15 +670,71 @@ function renderBracket(slots) {
 
   const grid = document.createElement("div");
   grid.className = "bracket-grid" + (bracketMode === "super" ? " super" : "");
+  const { order } = bracketOrder();
   for (const col of ROUND_COLUMNS) {
     const colEl = document.createElement("div");
     colEl.className = "bcol";
+    const body = document.createElement("div");
+    body.className = "bcol-body";
+    for (const m of order[col.key]) body.appendChild(matchBox(m, slots, col.key));
     colEl.innerHTML = `<div class="bcol-head">${col.label}</div>`;
-    const matches = col.key === "final" ? [DATA.bracket.final] : DATA.bracket[col.key];
-    for (const m of matches) colEl.appendChild(matchBox(m, slots, col.key));
+    colEl.appendChild(body);
     grid.appendChild(colEl);
   }
   host.appendChild(grid);
+  // Draw feeder connectors once the columns have laid out (measured from the DOM).
+  requestAnimationFrame(() => drawBracketConnectors(grid));
+}
+
+/* Overlay SVG connectors from each match to the slot it feeds in the next round.
+ * Positions are measured from the laid-out DOM (the bracket can scroll and the
+ * two modes have different box heights, so a static layout won't do). */
+function drawBracketConnectors(grid) {
+  const old = grid.querySelector(".bracket-links");
+  if (old) old.remove();
+  const { feeders } = bracketOrder();
+  const gridRect = grid.getBoundingClientRect();
+  const rel = (el) => {
+    const r = el.getBoundingClientRect();
+    return {
+      x: r.left - gridRect.left + grid.scrollLeft,
+      y: r.top - gridRect.top + grid.scrollTop,
+      w: r.width, h: r.height,
+    };
+  };
+  const boxByMatch = {};
+  grid.querySelectorAll(".bmatch").forEach((el) => { boxByMatch[el.dataset.match] = el; });
+
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("class", "bracket-links");
+  svg.setAttribute("width", grid.scrollWidth);
+  svg.setAttribute("height", grid.scrollHeight);
+
+  // Connect the source match (its winner exits the right edge) into the precise
+  // slot it feeds (home = first .bslot, away = second) on the left of the target.
+  const link = (srcMatch, targetBox, slotIndex) => {
+    const src = boxByMatch[srcMatch];
+    if (!src) return;
+    const slotEls = targetBox.querySelectorAll(".bslot");
+    const slotEl = slotEls[slotIndex] || targetBox;
+    const s = rel(src), t = rel(slotEl);
+    const x1 = s.x + s.w, y1 = s.y + s.h / 2;
+    const x2 = t.x, y2 = t.y + t.h / 2;
+    const midX = x1 + (x2 - x1) / 2;
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", `M ${x1} ${y1} H ${midX} V ${y2} H ${x2}`);
+    p.setAttribute("class", "bracket-link");
+    svg.appendChild(p);
+  };
+
+  for (const [matchNo, box] of Object.entries(boxByMatch)) {
+    const f = feeders[matchNo];
+    if (!f) continue;
+    if (f.home != null) link(f.home, box, 0);
+    if (f.away != null) link(f.away, box, 1);
+  }
+  grid.insertBefore(svg, grid.firstChild);
 }
 
 let refreshing = false;
@@ -532,7 +748,10 @@ async function refresh() {
   renderGroups(probabilities);
   renderOdds(probabilities);
   renderBracket(slots);
-  renderFixtures();
+  // Fixtures are intentionally NOT re-rendered here: they depend only on ratings
+  // and stored results, not on sim output, and rebuilding their inputs on every
+  // edit would wipe a half-entered scoreline and steal focus. They are rendered
+  // once at startup and on reset.
   document.getElementById("status").textContent =
     `${iterations.toLocaleString()} simulations · ${DATA.snapshot}`;
   refreshing = false;
@@ -542,8 +761,9 @@ async function main() {
   await loadData();
   loadResults();
   document.getElementById("reset").addEventListener("click", () => {
-    RESULTS = {}; saveResults(); refresh();
+    RESULTS = {}; saveResults(); renderFixtures(); refresh();
   });
+  renderFixtures();
   await refresh();
 }
 
