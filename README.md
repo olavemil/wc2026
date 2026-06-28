@@ -63,6 +63,21 @@ probability of reaching each round — and every champion probability — falls 
 the simulation frequencies, naturally accounting for *all* possible opponents and
 the chance each pairing actually happens.
 
+**Dynamic ratings (after group results).** As real group results are entered, each
+team's FIFA rating is updated using FIFA's *official* formula —
+`P += I × (W_actual − W_expected)`, with `I = 50` for the group stage, `W_actual`
+of 1 / 0.5 / 0 for win / draw / loss, and `W_expected` on FIFA's own 600-point
+scale. Ratings evolve match-by-match in matchday order, exactly as FIFA applies
+them. This is *result-only* (the scoreline doesn't affect the rating change — a
+7–1 and a 1–0 move the rating identically), which is how FIFA actually works.
+
+The updated ratings are used **only for the knockout simulation** — the group
+stage keeps the original 11-June snapshot, so an entered result doesn't
+retroactively re-weight the other group games. The **Live ranking** panel lists
+all 48 teams by updated rating with ↑/↓ movement vs the baseline. Effect: a team
+that overperforms in the group stage becomes a stronger pick deeper in the bracket,
+not just a team that happened to qualify.
+
 **Expected group standings.** Each group card shows, per team, the *expected*
 final-table values averaged across all simulations — expected points (`xPts`) and
 expected goal difference (`xGD`, also expected GF/GA are computed) — alongside the
