@@ -45,6 +45,43 @@ function dispersionFor(ratingH, ratingA) {
   return Math.max(DISP_MIN, Math.min(DISP_MAX, r));
 }
 
+/* ---- FIFA rating updates from real group results ----
+ * FIFA's official formula: P_new = P_old + I * (W_actual - W_expected), where
+ * W_expected uses FIFA's own 600-point scale (NOT the model's tuned RATING_SCALE),
+ * W_actual is 1 / 0.5 / 0 for win / draw / loss, and I is the match importance.
+ * Group stage (and Round of 16) use I = 50; quarter-finals onward use I = 60.
+ * Ratings evolve match-by-match in matchday order, as FIFA applies them.
+ * (FIFA has a minor edge case where a team isn't dropped below its pre-match
+ * points after some losses; we apply the clean formula, which is exact for the
+ * common win/draw/loss group cases.) */
+const FIFA_RATING_SCALE = 600;
+const FIFA_I_GROUP = 50;
+function fifaExpectation(ratingTeam, ratingOpp) {
+  return 1 / (Math.pow(10, -(ratingTeam - ratingOpp) / FIFA_RATING_SCALE) + 1);
+}
+
+/* Given the base team list and the fixed real group results, return a map
+ * code -> updated rating. Teams with no played games keep their base rating. */
+function updatedRatings(groups, fixedResults) {
+  const cur = {}; // code -> working rating (starts at base)
+  for (const teams of Object.values(groups)) for (const t of teams) cur[t.code] = t.rating;
+  for (const [letter, teams] of Object.entries(groups)) {
+    for (let m = 0; m < RR_PAIRS.length; m++) {
+      const id = letter + (m + 1);
+      const res = fixedResults[id];
+      if (!res || !Number.isFinite(res.home) || !Number.isFinite(res.away)) continue;
+      const [hi, ai] = RR_PAIRS[m];
+      const hCode = teams[hi].code, aCode = teams[ai].code;
+      const rh = cur[hCode], ra = cur[aCode];
+      const wh = res.home > res.away ? 1 : res.home < res.away ? 0 : 0.5;
+      const wa = 1 - wh;
+      cur[hCode] = rh + FIFA_I_GROUP * (wh - fifaExpectation(rh, ra));
+      cur[aCode] = ra + FIFA_I_GROUP * (wa - fifaExpectation(ra, rh));
+    }
+  }
+  return cur;
+}
+
 /* ---- RNG: mulberry32, seedable for reproducibility ---- */
 function makeRng(seed) {
   let a = seed >>> 0;
@@ -259,7 +296,12 @@ function playRound(matches, ctx, rng, fixedResults) {
     const h = resolveSlot(m.home, ctx, m.match);
     const a = resolveSlot(m.away, ctx, m.match);
     if (!h || !a) continue;
-    const res = simKnockout(h, a, rng, fixedResults[m.match]);
+    // Knockout uses post-group-stage updated ratings (ctx.koRating), while the
+    // team identity (code/flag/group) is unchanged. simMatch reads `.rating`, so
+    // pass rating-overridden views without mutating the shared team objects.
+    const hk = ctx.koRating ? { ...h, rating: ctx.koRating[h.code] ?? h.rating } : h;
+    const ak = ctx.koRating ? { ...a, rating: ctx.koRating[a.code] ?? a.rating } : a;
+    const res = simKnockout(hk, ak, rng, fixedResults[m.match]);
     const homeWon = res.home > res.away ||
       (res.home === res.away && res.shootoutWinner === "home");
     ctx.winners[m.match] = homeWon ? h : a;
@@ -309,6 +351,7 @@ function simTournament(data, rng, fixedResults) {
     groupWinners, groupRunners, thirdByGroup, thirdAssign,
     usedThirds: new Set(), winners: {}, losers: {},
     reached: {}, roundIndex: 0, matchFills: {},
+    koRating: data.koRating, // updated ratings for the knockout stage (or undefined)
   };
 
   // mark group qualifiers as having reached R32 (round 0)
@@ -343,6 +386,11 @@ function runMonteCarlo(data, iterations, fixedResults, seed) {
   const rng = makeRng(seed || 12345);
   const codes = [];
   for (const teams of Object.values(data.groups)) for (const t of teams) codes.push(t.code);
+
+  // Compute post-group-stage updated ratings ONCE (they depend only on the fixed
+  // real results, not on any random simulation) and use them for the knockout.
+  const koRating = updatedRatings(data.groups, fixedResults || {});
+  data = { ...data, koRating };
 
   // reachedCount[code][roundIndex] = times that team reached >= that round
   const reachedCount = {};
@@ -448,7 +496,7 @@ function runMonteCarlo(data, iterations, fixedResults, seed) {
       pThirdQ: finishCount[c].thirdQ / iterations,
     };
   }
-  return { iterations, probabilities: out, slots, slotsFull };
+  return { iterations, probabilities: out, slots, slotsFull, koRating };
 }
 
 /* ---- Worker plumbing ---- */

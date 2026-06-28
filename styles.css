@@ -36,12 +36,13 @@ button:hover { border-color: var(--accent); }
 main {
   display: grid;
   grid-template-columns: 320px 1fr;
-  grid-template-areas: "odds groups" "bracket bracket" "fixtures fixtures";
+  grid-template-areas: "odds groups" "ranking groups" "bracket bracket" "fixtures fixtures";
   gap: 18px;
   padding: 20px 28px;
   align-items: start;
 }
 #odds { grid-area: odds; }
+#ranking { grid-area: ranking; }
 #groups { grid-area: groups; }
 #bracket { grid-area: bracket; }
 #fixtures { grid-area: fixtures; }
@@ -61,6 +62,24 @@ main {
 .obar { background: var(--panel-2); height: 8px; border-radius: 4px; overflow: hidden; }
 .ofill { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), #2a86c9); }
 .oval { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ---- live ranking panel ---- */
+.rank-sub { color: var(--muted); font-size: 11px; margin: -6px 0 10px; }
+.rank-list { display: flex; flex-direction: column; gap: 3px; max-height: 520px; overflow-y: auto; }
+.rank-row {
+  display: grid; grid-template-columns: 22px 30px 20px 1fr auto;
+  align-items: center; gap: 6px; font-size: 13px; padding: 2px 0;
+}
+.rank-pos { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rank-move { font-size: 10px; text-align: right; font-variant-numeric: tabular-nums; }
+.rank-move.up { color: var(--good); }
+.rank-move.down { color: #e8704f; }
+.rank-move.flat { color: var(--line); }
+.rank-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rank-rating { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+.rank-rdelta { margin-left: 5px; font-size: 11px; }
+.rank-rdelta.up { color: var(--good); }
+.rank-rdelta.down { color: #e8704f; }
 
 /* ---- groups ---- */
 .groups-grid {
@@ -298,5 +317,5 @@ main {
 footer { padding: 8px 28px 28px; color: var(--muted); font-size: 12px; }
 
 @media (max-width: 760px) {
-  main { grid-template-columns: 1fr; grid-template-areas: "odds" "groups" "fixtures"; }
+  main { grid-template-columns: 1fr; grid-template-areas: "odds" "groups" "ranking" "bracket" "fixtures"; }
 }

@@ -216,6 +216,59 @@ function renderOdds(probs) {
   host.appendChild(list);
 }
 
+/* Baseline (June-11) ranking position per team, computed once: code -> 1-based
+ * rank by original rating. Used to show movement vs the updated ratings. */
+let BASE_RANK = null;
+function baselineRank() {
+  if (BASE_RANK) return BASE_RANK;
+  const sorted = Object.values(DATA.teamsByCode).slice().sort((a, b) => b.rating - a.rating);
+  BASE_RANK = {};
+  sorted.forEach((t, i) => { BASE_RANK[t.code] = i + 1; });
+  return BASE_RANK;
+}
+
+/* Live ranking panel: all 48 teams by updated (post-group) rating, with the
+ * position change vs the June-11 baseline shown as ↑/↓ arrows. */
+function renderRanking(koRating) {
+  const host = document.getElementById("ranking");
+  if (!host) return;
+  const base = baselineRank();
+  const updated = koRating || {};
+  // rank by updated rating (falls back to base rating for unplayed teams)
+  const ratingOf = (code) => updated[code] ?? DATA.teamsByCode[code].rating;
+  const ranked = Object.keys(DATA.teamsByCode).sort((a, b) => ratingOf(b) - ratingOf(a));
+  const anyChange = Object.keys(updated).some(
+    (c) => Math.abs(ratingOf(c) - DATA.teamsByCode[c].rating) > 1e-6);
+
+  host.innerHTML = `<h3>Live ranking</h3>` +
+    `<p class="rank-sub">${anyChange
+      ? "Updated from group results (FIFA formula) · movement vs 11 Jun baseline"
+      : "FIFA 11 Jun baseline — enter group results to see ratings shift"}</p>`;
+  const list = document.createElement("div");
+  list.className = "rank-list";
+  ranked.forEach((code, i) => {
+    const t = DATA.teamsByCode[code];
+    const pos = i + 1;
+    const delta = base[code] - pos; // +ve = risen
+    const rating = ratingOf(code);
+    const ratingDelta = rating - t.rating;
+    let move = `<span class="rank-move flat">–</span>`;
+    if (delta > 0) move = `<span class="rank-move up">▲${delta}</span>`;
+    else if (delta < 0) move = `<span class="rank-move down">▼${-delta}</span>`;
+    const ratingTag = Math.abs(ratingDelta) > 1e-6
+      ? `<span class="rank-rdelta ${ratingDelta > 0 ? "up" : "down"}">${ratingDelta > 0 ? "+" : ""}${ratingDelta.toFixed(0)}</span>`
+      : "";
+    const row = document.createElement("div");
+    row.className = "rank-row";
+    row.innerHTML =
+      `<span class="rank-pos">${pos}</span>${move}` +
+      `<span class="flag">${t.flag}</span><span class="rank-name">${t.name}</span>` +
+      `<span class="rank-rating">${rating.toFixed(0)}${ratingTag}</span>`;
+    list.appendChild(row);
+  });
+  host.appendChild(list);
+}
+
 /* Group fixtures, for result entry. Mirrors RR_PAIRS order in sim.js. */
 const RR_PAIRS = [[0, 1], [2, 3], [0, 2], [1, 3], [0, 3], [1, 2]];
 
@@ -742,11 +795,12 @@ async function refresh() {
   if (refreshing) return;
   refreshing = true;
   document.getElementById("status").textContent = "Simulating…";
-  const { probabilities, iterations, slots, slotsFull } = await runSim();
+  const { probabilities, iterations, slots, slotsFull, koRating } = await runSim();
   SLOTS_FULL = slotsFull || {};
   SLOTS = slots || {};
   renderGroups(probabilities);
   renderOdds(probabilities);
+  renderRanking(koRating);
   renderBracket(slots);
   // Fixtures are intentionally NOT re-rendered here: they depend only on ratings
   // and stored results, not on sim output, and rebuilding their inputs on every
